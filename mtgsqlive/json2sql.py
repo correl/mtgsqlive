@@ -340,6 +340,10 @@ def generate_sql_schema(json_data: Dict,
     if output_file["AllPrices.json"] or version.startswith("4"):
         schema["prices"] = {
             "uuid": { "type": "TEXT(36) REFERENCES cards(uuid) ON UPDATE CASCADE ON DELETE CASCADE" if engine == "sqlite" else "CHAR(36) NOT NULL,\n    INDEX(uuid),\n    FOREIGN KEY (uuid) REFERENCES cards(uuid) ON UPDATE CASCADE ON DELETE CASCADE" },
+            "game_format": {"type": "TEXT" if engine == "sqlite" else "ENUM"},
+            "provider": {"type": "TEXT" if engine == "sqlite" else "ENUM"},
+            "market": {"type": "TEXT" if engine == "sqlite" else "ENUM"},
+            "currency": {"type": "TEXT" if engine == "sqlite" else "ENUM"},
             "price": {"type": "FLOAT" if engine == "sqlite" else "DECIMAL(8,2)"},
             "type": {"type": "TEXT" if engine == "sqlite" else "ENUM"},
             "date": {"type": "DATE"},
@@ -603,21 +607,28 @@ def parse_and_import_extras(input_file: pathlib.Path, output_file: Dict) -> None
             "r", encoding="utf8"
         ) as f:
             json_data = json.load(f)
-        for card_uuid, price_data in json_data.items():
-            for price_type, price_dict in price_data["prices"].items():
-                if not price_type == "uuid":
-                    for price_date, price_value in price_dict.items():
-                        if price_value:
-                            sql_dict_insert(
-                                {
-                                    "uuid": card_uuid,
-                                    "type": price_type,
-                                    "date": price_date,
-                                    "price": float(price_value),
-                                },
-                                "prices",
-                                output_file,
-                            )
+        for card_uuid, price_data in json_data["data"].items():
+            for game_format, providers in price_data.items():
+                for provider, markets in providers.items():
+                    currency = markets.pop("currency", "USD")
+                    for market, card_types in markets.items():
+                        for price_type, price_dict in card_types.items():
+                            for price_date, price_value in price_dict.items():
+                                if price_value:
+                                    sql_dict_insert(
+                                        {
+                                            "uuid": card_uuid,
+                                            "game_format": game_format,
+                                            "provider": provider,
+                                            "market": market,
+                                            "currency": currency,
+                                            "type": price_type,
+                                            "date": price_date,
+                                            "price": float(price_value),
+                                        },
+                                        "prices",
+                                        output_file,
+                                    )
 
     if output_file["AllDeckFiles"]:
         LOGGER.info("Inserting Deck rows")
